@@ -7,28 +7,31 @@ const unsigned int GRID_HEIGHT = 50;
 const unsigned int NUM_SQUARES = GRID_WIDTH * GRID_HEIGHT;
 const unsigned long long MAX_COUNT = 5000000ULL;
 
+// Vertex Shader
 const char* vertexShaderSource = R"(
-    #version 330 core
-    layout (location = 0) in vec2 aPos;
-    uniform mat4 model;
-    uniform float intensity;
-    out float fragIntensity;
-    void main()
-    {
-        gl_Position = model * vec4(aPos.x, aPos.y, 0.0, 1.0);
-        fragIntensity = intensity;
-    }
+#version 330 core
+layout (location = 0) in vec2 aPos;
+layout (location = 1) in float aIntensity;
+uniform mat4 model;
+out float intensity;
+
+void main()
+{
+    gl_Position = model * vec4(aPos.x, aPos.y, 0.0, 1.0);
+    intensity = aIntensity;
+}
 )";
 
+// Fragment Shader
 const char* fragmentShaderSource = R"(
-    #version 330 core
-    in float fragIntensity;
-    out vec4 FragColor;
-    void main()
-    {
-        vec3 color = vec3(0.0, 1.0, 0.0) * fragIntensity; // Vibrant green
-        FragColor = vec4(color, 1.0);
-    }
+#version 330 core
+in float intensity;
+out vec4 FragColor;
+
+void main()
+{
+    FragColor = vec4(0.0, intensity, 0.0, 1.0);
+}
 )";
 
 void framebufferSizeCallback(GLFWwindow* window, int width, int height)
