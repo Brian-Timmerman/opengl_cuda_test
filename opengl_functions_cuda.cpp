@@ -2,8 +2,8 @@
 
 const unsigned int SCR_WIDTH = 1920;
 const unsigned int SCR_HEIGHT = 1080;
-const unsigned int GRID_WIDTH = 50;
-const unsigned int GRID_HEIGHT = 50;
+const unsigned int GRID_WIDTH = 100;
+const unsigned int GRID_HEIGHT = 100;
 const unsigned int NUM_SQUARES = GRID_WIDTH * GRID_HEIGHT;
 const unsigned long long MAX_COUNT = 5000000ULL;
 
@@ -12,27 +12,31 @@ const char* vertexShaderSource = R"(
 #version 330 core
 layout (location = 0) in vec2 aPos;
 layout (location = 1) in float aIntensity;
+out float fIntensity;
 uniform mat4 model;
-out float intensity;
 
 void main()
 {
     gl_Position = model * vec4(aPos.x, aPos.y, 0.0, 1.0);
-    intensity = aIntensity;
+    fIntensity = aIntensity;
 }
 )";
 
 // Fragment Shader
 const char* fragmentShaderSource = R"(
 #version 330 core
-in float intensity;
+in float fIntensity;
 out vec4 FragColor;
+
+uniform float max_count;
 
 void main()
 {
-    FragColor = vec4(0.0, intensity, 0.0, 1.0);
+    float normalizedIntensity = fIntensity / max_count;
+    FragColor = vec4(0.0, normalizedIntensity, 0.0, 1.0);
 }
 )";
+
 
 void framebufferSizeCallback(GLFWwindow* window, int width, int height)
 {

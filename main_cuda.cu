@@ -8,12 +8,33 @@
 __global__ void updateIntensities(float* intensities, int num_squares) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < num_squares) {
-        intensities[idx] = intensities[idx] + 0.001f;
+        atomicAdd(&intensities[idx], 1.0f);
+    }
+}
+
+std::atomic<bool> should_terminate(false);
+
+void cuda_thread_function(float* d_intensities, int num_squares) {
+    float h_intensities[GRID_WIDTH * GRID_HEIGHT];
+    while (!should_terminate.load()) {
+        int threadsPerBlock = 256;
+        int blocksPerGrid = (num_squares + threadsPerBlock - 1) / threadsPerBlock;
+        updateIntensities<<<blocksPerGrid, threadsPerBlock>>>(d_intensities, num_squares);
+        //cudaDeviceSynchronize();
+        
+        // Debug output
+        // if (rand() % 100 == 0) { // Print every 100th iteration approximately
+        //     cudaMemcpy(h_intensities, d_intensities, num_squares * sizeof(float), cudaMemcpyDeviceToHost);
+        //     std::cout << "Sample intensities: " << h_intensities[0] << ", " << h_intensities[num_squares/2] << ", " << h_intensities[num_squares-1] << std::endl;
+        // }
+        
+        // std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 }
 
 int main() {
 
+    double lastPrintTime = glfwGetTime();
     float* d_intensities;
     cudaMalloc(&d_intensities, GRID_WIDTH * GRID_HEIGHT * sizeof(float));
 
@@ -109,6 +130,10 @@ int main() {
     glDeleteShader(fragmentShader);
 
     unsigned int intensityLoc = glGetUniformLocation(shaderProgram, "intensity");
+
+    // Start the CUDA thread
+    std::thread cuda_thread(cuda_thread_function, d_intensities, GRID_WIDTH * GRID_HEIGHT);
+
    // Render loop
     while(!glfwWindowShouldClose(window)) {
         // Clear the screen with black color
@@ -121,13 +146,18 @@ int main() {
         cudaGraphicsMapResources(1, &cuda_intensity_resource, 0);
         cudaGraphicsResourceGetMappedPointer((void**)&d_mapped_intensities, &num_bytes, cuda_intensity_resource);
 
-        // Update intensities using CUDA
-        int threadsPerBlock = 256;
-        int blocksPerGrid = (GRID_WIDTH * GRID_HEIGHT + threadsPerBlock - 1) / threadsPerBlock;
-        updateIntensities<<<blocksPerGrid, threadsPerBlock>>>(d_mapped_intensities, GRID_WIDTH * GRID_HEIGHT);
+        cudaMemcpy(d_mapped_intensities, d_intensities, GRID_WIDTH * GRID_HEIGHT * sizeof(float), cudaMemcpyDeviceToDevice);
+
 
         // Unmap buffer
         cudaGraphicsUnmapResources(1, &cuda_intensity_resource, 0);
+
+        float h_intensities[GRID_WIDTH * GRID_HEIGHT];
+        cudaMemcpy(h_intensities, d_mapped_intensities, GRID_WIDTH * GRID_HEIGHT * sizeof(float), cudaMemcpyDeviceToHost);
+        if (glfwGetTime() - lastPrintTime > 1.0) { // Print every second
+            std::cout << "OpenGL intensities: " << h_intensities[0] << ", " << h_intensities[GRID_WIDTH*GRID_HEIGHT/2] << ", " << h_intensities[GRID_WIDTH*GRID_HEIGHT-1] << std::endl;
+            lastPrintTime = glfwGetTime();
+        }
 
         // Use the updated intensities in OpenGL
         glBindBuffer(GL_ARRAY_BUFFER, intensityVBO);
@@ -136,6 +166,13 @@ int main() {
 
         // Use shader program
         glUseProgram(shaderProgram);
+
+        // After creating the shader program
+        unsigned int maxCountLoc = glGetUniformLocation(shaderProgram, "max_count");
+
+        // In the render loop, before drawing squares
+        glUseProgram(shaderProgram);
+        glUniform1f(maxCountLoc, static_cast<float>(MAX_COUNT));
 
         // Draw squares
         glBindVertexArray(VAO);
@@ -156,12 +193,9 @@ int main() {
                                                     1.0f / (GRID_HEIGHT * (1 + spacing)), 
                                                     1.0f));
                 
+                
                 unsigned int modelLoc = glGetUniformLocation(shaderProgram, "model");
                 glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-                
-                // Set the intensity for this square
-                float intensity = 1.0;
-                glUniform1f(intensityLoc, intensity);
                 
                 glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
             }
@@ -180,5 +214,7 @@ int main() {
     glfwTerminate();
     cudaFree(d_intensities);
     cudaGraphicsUnregisterResource(cuda_intensity_resource);
+    should_terminate.store(true);
+    cuda_thread.join();
     return 0;
 }
